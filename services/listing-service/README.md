@@ -34,6 +34,7 @@ Bearer token (owner or admin); category create requires `role=admin`.
 | POST   | `/listings`      | Bearer | `{title, description?, price, categoryId, condition, location?, mediaIds?}` → status `pending`, emits `listing.created` |
 | PATCH  | `/listings/:id`  | owner/admin | partial update, emits `listing.updated` |
 | DELETE | `/listings/:id`  | owner/admin | 204, emits `listing.deleted` |
+| GET    | `/admin/listings` | admin | all statuses; `?status&q&categoryId&minPrice&maxPrice&location&condition&sort&page&limit` → `{items,page,limit,total}` |
 
 **Events:** publishes `listing.created|updated|deleted`; consumes `listing.approved|rejected`
 (from Admin Service) to flip status `pending → active|rejected` (idempotent).

@@ -17,6 +17,9 @@ export default () => ({
   listing: {
     baseUrl: process.env.ADMIN_LISTING_BASE_URL as string,
   },
+  auth: {
+    baseUrl: process.env.ADMIN_AUTH_BASE_URL as string,
+  },
   cors: {
     origins: (process.env.ADMIN_CORS_ORIGINS ?? '*').split(',').map((s) => s.trim()),
   },

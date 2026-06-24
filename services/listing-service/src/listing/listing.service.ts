@@ -10,6 +10,7 @@ import { AuthUser } from '../common/auth/jwt.strategy';
 import { Paginated } from '../common/interfaces/paginated.interface';
 import { CategoryService } from '../category/category.service';
 import { MessagingService } from '../messaging/messaging.service';
+import { AdminQueryListingsDto } from './dto/admin-query-listings.dto';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { QueryListingsDto } from './dto/query-listings.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
@@ -65,6 +66,49 @@ export class ListingService {
     const { page, limit } = query;
     const qb = this.repo.createQueryBuilder('l').where('l.status = :status', { status: 'active' });
 
+    if (query.q) {
+      qb.andWhere(`l.search_vector @@ plainto_tsquery('simple', :q)`, { q: query.q });
+    }
+    if (query.categoryId) {
+      qb.andWhere('l.category_id = :categoryId', { categoryId: query.categoryId });
+    }
+    if (query.minPrice !== undefined) {
+      qb.andWhere('l.price >= :minPrice', { minPrice: query.minPrice });
+    }
+    if (query.maxPrice !== undefined) {
+      qb.andWhere('l.price <= :maxPrice', { maxPrice: query.maxPrice });
+    }
+    if (query.location) {
+      qb.andWhere('l.location ILIKE :location', { location: `%${query.location}%` });
+    }
+    if (query.condition) {
+      qb.andWhere('l.condition = :condition', { condition: query.condition });
+    }
+
+    switch (query.sort) {
+      case 'price_asc':
+        qb.orderBy('l.price', 'ASC');
+        break;
+      case 'price_desc':
+        qb.orderBy('l.price', 'DESC');
+        break;
+      default:
+        qb.orderBy('l.created_at', 'DESC');
+    }
+
+    qb.skip((page - 1) * limit).take(limit);
+    const [items, total] = await qb.getManyAndCount();
+    return { items, page, limit, total };
+  }
+
+  /** Admin listing view: every status (optional status filter), same filters as search. */
+  async adminSearch(query: AdminQueryListingsDto): Promise<Paginated<Listing>> {
+    const { page, limit } = query;
+    const qb = this.repo.createQueryBuilder('l').where('1 = 1');
+
+    if (query.status) {
+      qb.andWhere('l.status = :status', { status: query.status });
+    }
     if (query.q) {
       qb.andWhere(`l.search_vector @@ plainto_tsquery('simple', :q)`, { q: query.q });
     }

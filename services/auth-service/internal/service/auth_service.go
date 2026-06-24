@@ -20,6 +20,7 @@ var (
 	ErrInvalidCredentials = errors.New("invalid email or password")
 	ErrInvalidRefresh     = errors.New("invalid or expired refresh token")
 	ErrUserInactive       = errors.New("user account is not active")
+	ErrInvalidStatus      = errors.New("status must be 'active' or 'banned'")
 )
 
 type AuthService struct {
@@ -147,4 +148,39 @@ func (s *AuthService) GetProfile(ctx context.Context, userID string) (*model.Use
 
 func (s *AuthService) UpdateProfile(ctx context.Context, userID, displayName string, avatarURL *string) (*model.User, error) {
 	return s.users.UpdateProfile(ctx, userID, displayName, avatarURL)
+}
+
+// UserPage is the paginated user list returned to the admin console.
+type UserPage struct {
+	Items []*model.User `json:"items"`
+	Page  int           `json:"page"`
+	Limit int           `json:"limit"`
+	Total int           `json:"total"`
+}
+
+func (s *AuthService) ListUsers(ctx context.Context, page, limit int) (*UserPage, error) {
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
+	items, err := s.users.List(ctx, limit, (page-1)*limit)
+	if err != nil {
+		return nil, err
+	}
+	total, err := s.users.Count(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &UserPage{Items: items, Page: page, Limit: limit, Total: total}, nil
+}
+
+// SetUserStatus bans ("banned") or reinstates ("active") a user. Already-issued
+// access tokens remain valid until they expire (~15m); Login blocks non-active users.
+func (s *AuthService) SetUserStatus(ctx context.Context, id, status string) (*model.User, error) {
+	if status != "active" && status != "banned" {
+		return nil, ErrInvalidStatus
+	}
+	return s.users.UpdateStatus(ctx, id, status)
 }

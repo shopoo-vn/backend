@@ -9,5 +9,6 @@ export const envValidationSchema = Joi.object({
   ADMIN_JWT_PUBLIC_KEY_PATH: Joi.string().required(),
   ADMIN_JWT_ISSUER: Joi.string().default('marketplace-auth'),
   ADMIN_LISTING_BASE_URL: Joi.string().uri().required(),
+  ADMIN_AUTH_BASE_URL: Joi.string().uri().required(),
   ADMIN_CORS_ORIGINS: Joi.string().default('*'),
 });

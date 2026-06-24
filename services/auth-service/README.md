@@ -36,6 +36,8 @@ go run ./cmd/server
 | GET    | `/users/me`      | Bearer | current profile |
 | PATCH  | `/users/me`      | Bearer | `{display_name, avatar_url?}` |
 | GET    | `/users/{id}`    | internal | sibling-service lookup |
+| GET    | `/users`         | admin  | `?page&limit` → `{items,page,limit,total}` |
+| PATCH  | `/users/{id}/status` | admin | `{status:"active"\|"banned"}` (ban/unban) |
 
 ## Quick smoke test
 ```bash
