@@ -1,0 +1,21 @@
+# Secrets & keys (generate locally with scripts/gen-keys.*)
+keys/*.pem
+.env
+**/.env
+
+# Go
+*.exe
+*.test
+/bin/
+/services/*/bin/
+
+# Node
+node_modules/
+.next/
+dist/
+.expo/
+
+# Editor / OS
+.DS_Store
+.idea/
+*.log

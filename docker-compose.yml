@@ -1,0 +1,213 @@
+name: marketplace
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-marketplace}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-marketplace}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+    ports:
+      - "5672:5672"     # AMQP
+      - "15672:15672"   # management UI
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    # check_port_connectivity ensures the AMQP listener actually accepts connections
+    # (plain `ping` reports healthy before the port is fully bound).
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_port_connectivity"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 30s
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000"     # S3 API
+      - "9001:9001"     # console
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  auth-service:
+    build: ./services/auth-service
+    restart: unless-stopped
+    environment:
+      AUTH_HTTP_ADDR: ":8001"
+      AUTH_DB_URL: "postgres://auth_svc:auth_pw@postgres:5432/${POSTGRES_DB:-marketplace}?search_path=auth&sslmode=disable"
+      AUTH_REDIS_ADDR: "redis:6379"
+      AUTH_PRIVATE_KEY_PATH: "/keys/jwt_private.pem"
+      AUTH_PUBLIC_KEY_PATH: "/keys/jwt_public.pem"
+      AUTH_ACCESS_TTL_MIN: "15"
+      AUTH_REFRESH_TTL_DAYS: "7"
+      AUTH_JWT_ISSUER: "marketplace-auth"
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./keys:/keys:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  listing-service:
+    build: ./services/listing-service
+    restart: unless-stopped
+    environment:
+      LISTING_HTTP_PORT: "8004"
+      LISTING_DB_URL: "postgres://listing_svc:listing_pw@postgres:5432/${POSTGRES_DB:-marketplace}"
+      LISTING_RABBITMQ_URL: "amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672"
+      RABBITMQ_EXCHANGE: "marketplace.events"
+      LISTING_JWT_PUBLIC_KEY_PATH: "/keys/jwt_public.pem"
+      LISTING_JWT_ISSUER: "marketplace-auth"
+      LISTING_CORS_ORIGINS: "*"
+    ports:
+      - "8004:8004"
+    volumes:
+      - ./keys:/keys:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  media-service:
+    build: ./services/media-service
+    restart: unless-stopped
+    environment:
+      MEDIA_HTTP_ADDR: ":8002"
+      MEDIA_DB_URL: "postgres://media_svc:media_pw@postgres:5432/${POSTGRES_DB:-marketplace}?search_path=media&sslmode=disable"
+      MEDIA_JWT_PUBLIC_KEY_PATH: "/keys/jwt_public.pem"
+      MEDIA_JWT_ISSUER: "marketplace-auth"
+      MEDIA_S3_ENDPOINT: "minio:9000"
+      MEDIA_S3_ACCESS_KEY: "${MINIO_ROOT_USER:-minioadmin}"
+      MEDIA_S3_SECRET_KEY: "${MINIO_ROOT_PASSWORD:-minioadmin}"
+      MEDIA_S3_BUCKET: "media"
+      MEDIA_S3_USE_SSL: "false"
+      MEDIA_S3_PUBLIC_BASE_URL: "http://localhost:9000/media"
+      MEDIA_MAX_UPLOAD_BYTES: "10485760"
+      MEDIA_RESIZE_WORKERS: "4"
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./keys:/keys:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  noti-service:
+    build: ./services/noti-service
+    restart: unless-stopped
+    environment:
+      NOTI_HTTP_ADDR: ":8003"
+      NOTI_DB_URL: "postgres://noti_svc:noti_pw@postgres:5432/${POSTGRES_DB:-marketplace}?search_path=noti&sslmode=disable"
+      NOTI_REDIS_ADDR: "redis:6379"
+      NOTI_RABBITMQ_URL: "amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672"
+      NOTI_RABBITMQ_EXCHANGE: "marketplace.events"
+      NOTI_JWT_PUBLIC_KEY_PATH: "/keys/jwt_public.pem"
+      NOTI_JWT_ISSUER: "marketplace-auth"
+      NOTI_FCM_CREDENTIALS_FILE: ""
+      NOTI_PROCESSED_TTL_MIN: "1440"
+    ports:
+      - "8003:8003"
+    volumes:
+      - ./keys:/keys:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  admin-service:
+    build: ./services/admin-service
+    restart: unless-stopped
+    environment:
+      ADMIN_HTTP_PORT: "8005"
+      ADMIN_DB_URL: "postgres://admin_svc:admin_pw@postgres:5432/${POSTGRES_DB:-marketplace}"
+      ADMIN_RABBITMQ_URL: "amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672"
+      RABBITMQ_EXCHANGE: "marketplace.events"
+      ADMIN_JWT_PUBLIC_KEY_PATH: "/keys/jwt_public.pem"
+      ADMIN_JWT_ISSUER: "marketplace-auth"
+      ADMIN_LISTING_BASE_URL: "http://listing-service:8004"
+      ADMIN_CORS_ORIGINS: "*"
+    ports:
+      - "8005:8005"
+    volumes:
+      - ./keys:/keys:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  chat-service:
+    build: ./services/chat-service
+    restart: unless-stopped
+    environment:
+      CHAT_HTTP_PORT: "8006"
+      CHAT_DB_URL: "postgres://chat_svc:chat_pw@postgres:5432/${POSTGRES_DB:-marketplace}"
+      CHAT_REDIS_URL: "redis://redis:6379"
+      CHAT_RABBITMQ_URL: "amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672"
+      RABBITMQ_EXCHANGE: "marketplace.events"
+      CHAT_JWT_PUBLIC_KEY_PATH: "/keys/jwt_public.pem"
+      CHAT_JWT_ISSUER: "marketplace-auth"
+      CHAT_CORS_ORIGINS: "*"
+    ports:
+      - "8006:8006"
+    volumes:
+      - ./keys:/keys:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redisdata:
+  rabbitmqdata:
+  miniodata:
