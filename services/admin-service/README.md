@@ -34,6 +34,13 @@ Service **public key** only (`keys/jwt_public.pem`). `GET /health` is open.
 | POST   | `/admin/moderation/:listingId/reject` | admin | body `{reason}`; sets `rejected`; emits `listing.rejected` |
 | GET    | `/admin/reports?page&limit`           | admin | paginated reports → `{items,page,limit,total}` |
 | POST   | `/admin/reports/:id/resolve`          | admin | sets report `resolved` |
+| GET    | `/admin/users?page&limit`             | admin | aggregates Auth Service → `{items,page,limit,total}` |
+| POST   | `/admin/users/:id/ban`                | admin | bans a user (Auth `status=banned`) |
+| POST   | `/admin/users/:id/unban`              | admin | reinstates a user (Auth `status=active`) |
+| GET    | `/admin/listings?status&q&page&limit` | admin | aggregates Listing Service (all statuses) |
+
+> `/admin/users*` and `/admin/listings` **aggregate** the Auth and Listing services
+> over REST (forwarding the admin's Bearer token) — admin-service holds no users/listings table.
 
 ## Events
 | Direction | Routing key        | Payload | Effect |

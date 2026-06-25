@@ -66,3 +66,39 @@ func (r *UserRepo) UpdateProfile(ctx context.Context, id, displayName string, av
 		id, displayName, avatarURL,
 	))
 }
+
+// List returns users newest-first for the admin console.
+func (r *UserRepo) List(ctx context.Context, limit, offset int) ([]*model.User, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+userColumns+` FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+		limit, offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	users := make([]*model.User, 0, limit)
+	for rows.Next() {
+		u, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, rows.Err()
+}
+
+func (r *UserRepo) Count(ctx context.Context) (int, error) {
+	var n int
+	err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM users`).Scan(&n)
+	return n, err
+}
+
+func (r *UserRepo) UpdateStatus(ctx context.Context, id, status string) (*model.User, error) {
+	return scanUser(r.pool.QueryRow(ctx,
+		`UPDATE users SET status = $2, updated_at = now() WHERE id = $1
+		 RETURNING `+userColumns,
+		id, status,
+	))
+}

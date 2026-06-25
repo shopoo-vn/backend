@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/marketplace/auth-service/internal/middleware"
@@ -167,6 +168,60 @@ func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "could not fetch user")
+		return
+	}
+	writeJSON(w, http.StatusOK, u)
+}
+
+// ── admin endpoints (role=admin required) ────────────────────────────────────
+
+func requireAdmin(w http.ResponseWriter, r *http.Request) bool {
+	if middleware.Role(r.Context()) != "admin" {
+		writeError(w, http.StatusForbidden, "admin role required")
+		return false
+	}
+	return true
+}
+
+// ListUsers returns a paginated list of users (admin console).
+func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r) {
+		return
+	}
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	res, err := h.auth.ListUsers(r.Context(), page, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not list users")
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+type updateStatusReq struct {
+	Status string `json:"status"`
+}
+
+// SetUserStatus bans/unbans a user.
+func (h *Handler) SetUserStatus(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r) {
+		return
+	}
+	var req updateStatusReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	u, err := h.auth.SetUserStatus(r.Context(), chi.URLParam(r, "id"), req.Status)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrInvalidStatus):
+			writeError(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, repo.ErrNotFound):
+			writeError(w, http.StatusNotFound, "user not found")
+		default:
+			writeError(w, http.StatusInternalServerError, "could not update status")
+		}
 		return
 	}
 	writeJSON(w, http.StatusOK, u)

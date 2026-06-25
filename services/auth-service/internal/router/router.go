@@ -34,11 +34,14 @@ func New(h *handler.Handler, tm *token.Manager) http.Handler {
 		// "/me" route over this param route, so they don't collide).
 		r.Get("/{id}", h.GetUser)
 
-		// Authenticated self endpoints.
+		// Authenticated endpoints.
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Auth(tm))
 			r.Get("/me", h.Me)
 			r.Patch("/me", h.UpdateMe)
+			// Admin-only (handlers enforce role=admin).
+			r.Get("/", h.ListUsers)
+			r.Patch("/{id}/status", h.SetUserStatus)
 		})
 	})
 
