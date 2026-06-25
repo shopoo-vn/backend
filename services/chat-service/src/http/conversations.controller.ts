@@ -1,13 +1,24 @@
 import type { Request, Response } from 'express';
 import * as repo from '../repo/chat.repo';
-import { isParticipant } from '../services/chat.service';
+import { isParticipant, otherParticipant } from '../services/chat.service';
 import { createConversationSchema, listMessagesQuerySchema } from './validation';
 import { logger } from '../lib/logger';
 
-// GET /conversations — the authenticated user's conversations (last msg + unread).
+// GET /conversations — the authenticated user's conversations, shaped for the
+// client: the OTHER participant is resolved to `peerId`, lastMessage is flattened
+// to its text, and unread is exposed as `unreadCount`.
 export async function listConversations(req: Request, res: Response): Promise<void> {
   try {
-    const items = await repo.listConversations(req.user!.userId);
+    const me = req.user!.userId;
+    const summaries = await repo.listConversations(me);
+    const items = summaries.map((c) => ({
+      id: c.id,
+      listingId: c.listingId,
+      peerId: otherParticipant(c, me),
+      lastMessage: c.lastMessage?.body ?? null,
+      lastMessageAt: c.lastMessageAt,
+      unreadCount: c.unread,
+    }));
     res.json({ items });
   } catch (err) {
     logger.error('listConversations failed', { err: (err as Error).message });

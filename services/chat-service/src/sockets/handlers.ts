@@ -51,21 +51,23 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
 
   // message:send — validate, authorize, PERSIST first, then emit. Acked.
   socket.on('message:send', (payload, ack) => {
+    // Clients (e.g. mobile) may emit without an ack callback — never crash on it.
+    const safeAck = typeof ack === 'function' ? ack : () => undefined;
     void (async () => {
       const parsed = messageSendSchema.safeParse(payload);
       if (!parsed.success) {
-        ack({ ok: false, error: parsed.error.issues[0]?.message ?? 'invalid payload' });
+        safeAck({ ok: false, error: parsed.error.issues[0]?.message ?? 'invalid payload' });
         return;
       }
       const { conversationId, body, clientMsgId } = parsed.data;
       try {
         const conv = await repo.findConversationById(conversationId);
         if (!conv) {
-          ack({ ok: false, error: 'conversation not found' });
+          safeAck({ ok: false, error: 'conversation not found' });
           return;
         }
         if (!isParticipant(conv, userId)) {
-          ack({ ok: false, error: 'not a participant' });
+          safeAck({ ok: false, error: 'not a participant' });
           return;
         }
 
@@ -80,7 +82,7 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
         // Ensure sender is in the room, then fan out.
         await socket.join(room(conversationId));
         io.to(room(conversationId)).emit('message:new', { message });
-        ack({ ok: true, message });
+        safeAck({ ok: true, message });
 
         // Tell the sender the server accepted/persisted it.
         socket.emit('message:delivered', {
@@ -90,7 +92,7 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
         });
       } catch (err) {
         logger.error('message:send failed', { err: (err as Error).message, userId });
-        ack({ ok: false, error: 'internal error' });
+        safeAck({ ok: false, error: 'internal error' });
       }
     })();
   });
