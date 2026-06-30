@@ -1,6 +1,6 @@
-# Backend — Marketplace Đồ Điện Tử
+# Backend — Electronics Marketplace
 
-Polyglot microservices (repo `backend/` trong workspace `shopoo/`). Kế hoạch:
+Polyglot microservices (the `backend/` repo in the `shopoo/` workspace). Plans:
 - [`../implementation_plan_marketplace.md`](../implementation_plan_marketplace.md) — overview & service split
 - [`../implementation_plan_backend.md`](../implementation_plan_backend.md) — services, events, DB, milestones
 
